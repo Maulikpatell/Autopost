@@ -25,6 +25,9 @@ async def _(e): await add_admin(e)
 @client.on(events.NewMessage(pattern="/addchannel"))
 async def _(e): await add_channel(e)
 
+@client.on(events.NewMessage(pattern="/setsource"))
+async def _(e): await set_source(e)
+
 @client.on(events.NewMessage(pattern="/status"))
 async def _(e): await status(e)
 
