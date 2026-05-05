@@ -1,6 +1,7 @@
 import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError
 
 from bot.config import API_ID, API_HASH, SESSION_STRING, OWNER_ID, BOT_TOKEN
 from bot.database import admins_col
@@ -10,17 +11,24 @@ from bot.session_gen import start_session, handle_session
 from bot.web import start_web_server
 
 
-# USERBOT (core engine)
+# USERBOT (engine)
 userbot = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-# BOT (UI layer) — DO NOT auto-start here
+# BOT (UI)
 bot = TelegramClient("bot", API_ID, API_HASH)
+
+
+# ---------------- DEBUG HANDLER ---------------- #
+@bot.on(events.NewMessage)
+async def debug_all(e):
+    print(f"📩 Incoming message: {e.raw_text}")
 
 
 # ---------------- BOT COMMANDS ---------------- #
 
 @bot.on(events.NewMessage(pattern="/start"))
 async def start(event):
+    print("⚡ /start triggered")
     if await is_admin(event.sender_id):
         await event.reply("✅ Admin panel ready. Use /help")
     else:
@@ -84,16 +92,18 @@ async def session_flow(e):
 # ---------------- SAFE BOT START ---------------- #
 
 async def start_bot():
-    from telethon.errors import FloodWaitError
-
     while True:
         try:
+            print("⚡ Starting bot login...")
             await bot.start(bot_token=BOT_TOKEN)
-            print("✅ Bot started")
+            print("✅ Bot started successfully")
             break
         except FloodWaitError as e:
             print(f"⏳ FloodWait: sleeping {e.seconds}s")
             await asyncio.sleep(e.seconds)
+        except Exception as e:
+            print(f"❌ Bot start error: {e}")
+            await asyncio.sleep(10)
 
 
 # ---------------- MAIN ---------------- #
@@ -101,25 +111,28 @@ async def start_bot():
 async def main():
     print("🚀 Starting system...")
 
-    # Start web FIRST (so health check passes)
+    # 1. Start web server FIRST (for Koyeb health check)
     await start_web_server()
 
-    # Start userbot
+    # 2. Start userbot
     await userbot.start()
+    print("✅ Userbot started")
 
+    # 3. Ensure owner exists
     if not await admins_col.find_one({"admin_id": OWNER_ID}):
         await admins_col.insert_one({"admin_id": OWNER_ID})
 
-    # Start bot safely (no crash loop)
+    # 4. Start bot safely
     await start_bot()
 
-    # Start scheduler
+    # 5. Start scheduler
     asyncio.create_task(scheduler(userbot))
+    print("📡 Scheduler started")
 
     print("✅ System fully running")
 
-    # Keep running
-    await bot.run_until_disconnected()
+    # 6. KEEP EVENT LOOP ALIVE (IMPORTANT FIX)
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
