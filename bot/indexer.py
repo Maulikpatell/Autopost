@@ -1,13 +1,15 @@
 async def update_source(client, source_id, admins, messages_col):
-    msgs = await client.get_messages(source_id, limit=100)
-
     doc = await messages_col.find_one({"source_id": source_id})
-    existing = set(doc["message_ids"]) if doc else set()
+    existing_ids = doc["message_ids"] if doc else []
 
-    new_ids = [m.id for m in msgs if m.id not in existing]
+    last_id = max(existing_ids) if existing_ids else 0
+
+    msgs = await client.get_messages(source_id, min_id=last_id)
+
+    new_ids = [m.id for m in msgs if m.id not in existing_ids]
 
     if new_ids:
-        updated = list(existing) + sorted(new_ids)
+        updated = existing_ids + sorted(new_ids)
 
         await messages_col.update_one(
             {"source_id": source_id},
@@ -18,5 +20,5 @@ async def update_source(client, source_id, admins, messages_col):
         for admin in admins:
             await client.send_message(
                 admin,
-                f"✅ Source Updated\n\nSource: {source_id}\nNew: {len(new_ids)}\nTotal: {len(updated)}"
+                f"✅ Indexed {len(new_ids)} new posts from {source_id}"
             )
