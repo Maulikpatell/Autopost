@@ -1,11 +1,8 @@
 import asyncio
-import random
 from bot.caption import process_caption
 
-async def post_channel(client, config, messages_col):
-    if config.get("paused"):
-        return None
 
+async def post_single(client, config, messages_col):
     source = config["source_id"]
     channel = config["channel_id"]
 
@@ -14,18 +11,22 @@ async def post_channel(client, config, messages_col):
         return None
 
     ids = doc["message_ids"]
-    start = config["last_index"]
-    limit = config["daily_limit"]
+    index = config["last_index"] % len(ids)
+    msg_id = ids[index]
 
-    for i in range(limit):
-        index = (start + i) % len(ids)
-        msg_id = ids[index]
-
+    try:
         msg = await client.get_messages(source, ids=msg_id)
+
         caption = process_caption(msg.text, config)
 
-        await client.send_file(channel, msg.media, caption=caption)
+        if msg.media:
+            await client.send_file(channel, msg.media, caption=caption)
+        else:
+            await client.send_message(channel, caption)
 
-        await asyncio.sleep(random.randint(20, 60))
+        return (index + 1) % len(ids)
 
-    return (start + limit) % len(ids)
+    except Exception as e:
+        print(f"❌ Post failed: {e}")
+        await asyncio.sleep(10)
+        return index  # retry next cycle
