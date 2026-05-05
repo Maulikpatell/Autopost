@@ -29,16 +29,13 @@ async def channel_scheduler(client, config):
             await asyncio.sleep(300)
             continue
 
-        # Update source
         admins = [a["admin_id"] async for a in admins_col.find()]
         await update_source(client, config["source_id"], admins, messages_col)
 
-        # Create post task
         task = await create_post_task(client, config, messages_col)
         if task:
             await queue.put(task)
 
-        # Calculate interval
         if config["end_hour"] > config["start_hour"]:
             active_hours = config["end_hour"] - config["start_hour"]
         else:
