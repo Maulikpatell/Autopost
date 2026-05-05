@@ -16,6 +16,7 @@ async def channel_scheduler(client, config):
     channel_id = config["channel_id"]
     queue = channel_queue.get_queue(channel_id)
 
+    # Start worker for this channel
     asyncio.create_task(worker(client, channel_id, queue))
 
     while True:
@@ -25,16 +26,40 @@ async def channel_scheduler(client, config):
 
         now = datetime.now().hour
 
+        # Check posting window
         if not is_allowed(now, config["start_hour"], config["end_hour"]):
             await asyncio.sleep(300)
             continue
 
-        # update source
+        # Update source (index new posts)
         admins = [a["admin_id"] async for a in admins_col.find()]
         await update_source(client, config["source_id"], admins, messages_col)
 
-        # create post task
+        # Create and push task to queue
         task = await create_post_task(client, config, messages_col)
+        if task:
+            await queue.put(task)
+
+        # Calculate interval
+        if config["end_hour"] > config["start_hour"]:
+            active_hours = config["end_hour"] - config["start_hour"]
+        else:
+            active_hours = 24 - config["start_hour"] + config["end_hour"]
+
+        interval = (active_hours * 3600) // max(config["daily_limit"], 1)
+
+        await asyncio.sleep(interval)
+
+
+async def scheduler(client):
+    channels = await channels_col.find().to_list(None)
+
+    for config in channels:
+        asyncio.create_task(channel_scheduler(client, config))
+
+    # Keep scheduler alive
+    while True:
+        await asyncio.sleep(3600)        task = await create_post_task(client, config, messages_col)
         await queue.put(task)
 
         # interval
