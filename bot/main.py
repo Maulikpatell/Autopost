@@ -1,78 +1,83 @@
 import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon import Bot
 
-from bot.config import API_ID, API_HASH, SESSION_STRING, OWNER_ID
+from bot.config import (
+    API_ID, API_HASH, SESSION_STRING, OWNER_ID, BOT_TOKEN
+)
 from bot.database import admins_col
 from bot.scheduler import scheduler
 from bot.commands import *
 from bot.session_gen import start_session, handle_session
 
-client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+# USERBOT (core engine)
+userbot = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+# BOT (UI layer)
+bot = TelegramClient("bot", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 
-# ---------------- BASIC ---------------- #
+# ---------------- BOT COMMANDS (UI) ---------------- #
 
-@client.on(events.NewMessage(pattern="/start"))
+@bot.on(events.NewMessage(pattern="/start"))
 async def start(event):
     if await is_admin(event.sender_id):
-        await event.reply("✅ You are admin. Use /help")
+        await event.reply("✅ Admin panel ready. Use /help")
     else:
-        await event.reply("🤖 Private bot.")
+        await event.reply("❌ Access denied")
 
 
-# ---------------- COMMANDS ---------------- #
-
-@client.on(events.NewMessage(pattern="/help"))
+@bot.on(events.NewMessage(pattern="/help"))
 async def _(e): await help_command(e)
 
-@client.on(events.NewMessage(pattern="/addadmin"))
+@bot.on(events.NewMessage(pattern="/addadmin"))
 async def _(e): await add_admin(e)
 
-@client.on(events.NewMessage(pattern="/addchannel"))
+@bot.on(events.NewMessage(pattern="/addchannel"))
 async def _(e): await add_channel(e)
 
-@client.on(events.NewMessage(pattern="/removechannel"))
+@bot.on(events.NewMessage(pattern="/removechannel"))
 async def _(e): await remove_channel(e)
 
-@client.on(events.NewMessage(pattern="/setsource"))
+@bot.on(events.NewMessage(pattern="/setsource"))
 async def _(e): await set_source(e)
 
-@client.on(events.NewMessage(pattern="/setlimit"))
+@bot.on(events.NewMessage(pattern="/setlimit"))
 async def _(e): await set_limit(e)
 
-@client.on(events.NewMessage(pattern="/settime"))
+@bot.on(events.NewMessage(pattern="/settime"))
 async def _(e): await set_time(e)
 
-@client.on(events.NewMessage(pattern="/setfooter"))
+@bot.on(events.NewMessage(pattern="/setfooter"))
 async def _(e): await set_footer(e)
 
-@client.on(events.NewMessage(pattern="/setmode"))
+@bot.on(events.NewMessage(pattern="/setmode"))
 async def _(e): await set_mode(e)
 
-@client.on(events.NewMessage(pattern="/setlink"))
+@bot.on(events.NewMessage(pattern="/setlink"))
 async def _(e): await set_link(e)
 
-@client.on(events.NewMessage(pattern="/pause"))
+@bot.on(events.NewMessage(pattern="/pause"))
 async def _(e): await pause_channel(e)
 
-@client.on(events.NewMessage(pattern="/resume"))
+@bot.on(events.NewMessage(pattern="/resume"))
 async def _(e): await resume_channel(e)
 
-@client.on(events.NewMessage(pattern="/status"))
+@bot.on(events.NewMessage(pattern="/status"))
 async def _(e): await status(e)
 
 
-# ---------------- SESSION GENERATOR ---------------- #
-
-@client.on(events.NewMessage(pattern="/gensession"))
+# SESSION GENERATOR (still uses userbot API)
+@bot.on(events.NewMessage(pattern="/gensession"))
 async def _(e):
     if not await is_admin(e.sender_id):
         return await e.reply("❌ Not allowed")
     await start_session(e)
 
 
-@client.on(events.NewMessage)
+@bot.on(events.NewMessage)
 async def session_flow(e):
     await handle_session(e)
 
@@ -80,29 +85,19 @@ async def session_flow(e):
 # ---------------- MAIN ---------------- #
 
 async def main():
-    await client.start()
+    await userbot.start()
 
     if not await admins_col.find_one({"admin_id": OWNER_ID}):
         await admins_col.insert_one({"admin_id": OWNER_ID})
 
-    print("🚀 Bot Started")
+    print("🚀 Hybrid system started")
 
     await asyncio.sleep(5)
-    await scheduler(client)
+
+    # run scheduler on USERBOT (important)
+    asyncio.create_task(scheduler(userbot))
+
+    await bot.run_until_disconnected()
 
 
-with client:
-    client.loop.run_until_complete(main())async def main():
-    await client.start()
-
-    if not await admins_col.find_one({"admin_id": OWNER_ID}):
-        await admins_col.insert_one({"admin_id": OWNER_ID})
-
-    print("🚀 Bot Started")
-
-    await asyncio.sleep(5)  # startup delay
-    await scheduler(client)
-
-
-with client:
-    client.loop.run_until_complete(main())
+asyncio.run(main())
